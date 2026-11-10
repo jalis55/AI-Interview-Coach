@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     request_timeout_seconds: float = Field(default=30.0, gt=0, le=120)
     primary_max_attempts: int = Field(default=3, ge=1, le=3)
     fallback_max_attempts: int = Field(default=2, ge=1, le=2)
+    search_domains: list[str] = Field(
+        default_factory=lambda: ["geeksforgeeks.org", "interviewbit.com", "stackoverflow.com"]
+    )
+    candidates_per_skill: int = Field(default=6, ge=3, le=9)
+    candidate_pool_limit: int = Field(default=90, ge=30, le=120)
+    tool_loop_max_iterations: int = Field(default=3, ge=1, le=3)
 
     @field_validator("groq_api_key", "tavily_api_key")
     @classmethod

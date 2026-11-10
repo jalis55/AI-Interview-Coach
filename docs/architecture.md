@@ -21,11 +21,12 @@ The installed Tavily integration transitively brings in `langchain` and `langgra
 application code will not use LangGraph. Keep normal dependency resolution intact
 rather than removing transitive packages manually.
 
-A Groq model will be selected and checked for tool calling and structured output
-when the provider integration is implemented.
+The configured Groq model is used for structured parsing and validated tool requests.
+See research.md for the version-sensitive Tavily transport boundary and failure policy.
 
-## Scope of this scaffold
+## Current scope
 
-This is a single-process local application foundation. In-memory stores and
-application contracts will be implemented next; production persistence and
-authentication are outside the current project scope.
+This is a single-process local application with isolated in-memory state, JD review,
+validated coverage planning, and question preparation. The interview loop and scoring
+are subsequent milestones; production persistence and authentication remain outside
+the current project scope.

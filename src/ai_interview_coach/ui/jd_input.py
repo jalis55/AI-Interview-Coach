@@ -9,13 +9,14 @@ from ai_interview_coach.chains.jd_parser import (
     build_jd_parser,
 )
 from ai_interview_coach.config import get_settings
+from ai_interview_coach.models.session import InterviewSession
 from ai_interview_coach.services.jd_parser import (
     JDParsingError,
     JDParsingService,
 )
 
 
-def render_jd_input() -> None:
+def render_jd_input(session: InterviewSession) -> None:
     with st.form("jd_input_form"):
         jd_text = st.text_area(
             "Job description",
@@ -58,6 +59,7 @@ def render_jd_input() -> None:
         st.warning(outcome.result.message)
         return
 
+    session.jd_context = jd_text.strip()
     st.session_state["pending_jd_result"] = outcome.result
 
     st.session_state["jd_review_id"] = uuid4().hex

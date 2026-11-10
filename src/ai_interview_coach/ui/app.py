@@ -7,10 +7,13 @@ from pydantic import ValidationError
 
 from ai_interview_coach.config import get_settings
 from ai_interview_coach.models.jd_parse import JDParseResult
+from ai_interview_coach.models.session import InterviewStatus
 from ai_interview_coach.stores.history_store import InMemoryHistoryStore
 from ai_interview_coach.stores.session_store import InMemorySessionStore
 from ai_interview_coach.ui.jd_input import render_jd_input
 from ai_interview_coach.ui.jd_review import render_jd_review
+from ai_interview_coach.ui.planning import render_planning
+from ai_interview_coach.ui.research import render_research, render_research_activity
 
 
 def initialize_state() -> None:
@@ -55,8 +58,10 @@ def main() -> None:
         st.caption(f"Session ID: {session.session_id}")
         st.write(f"Status: {session.status.value}")
 
+    render_research_activity(session)
+
     if session.requirements is None:
-        render_jd_input()
+        render_jd_input(session)
         render_jd_review(session)
     else:
         st.success("Job requirements confirmed.")
@@ -68,8 +73,16 @@ def main() -> None:
                 requirements=session.requirements.model_copy(deep=True),
                 message="Review your changes and confirm the requirements again.",
             )
-            st.caption("Requirements confirmed. Question planning is the next step.")
             st.session_state["jd_review_id"] = uuid4().hex
 
             session.requirements = None
+            session.plan = None
+            session.plan_used_fallback = False
+            session.planning_attempts = 0
+            session.candidate_pool = []
+            session.research_complete = False
+            session.status = InterviewStatus.DRAFT
             st.rerun()
+
+        render_planning(session)
+        render_research(session)
