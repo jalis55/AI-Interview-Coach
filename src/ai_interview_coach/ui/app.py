@@ -1,11 +1,16 @@
 """Streamlit application shell."""
 
+from uuid import uuid4
+
 import streamlit as st
 from pydantic import ValidationError
 
 from ai_interview_coach.config import get_settings
+from ai_interview_coach.models.jd_parse import JDParseResult
 from ai_interview_coach.stores.history_store import InMemoryHistoryStore
 from ai_interview_coach.stores.session_store import InMemorySessionStore
+from ai_interview_coach.ui.jd_input import render_jd_input
+from ai_interview_coach.ui.jd_review import render_jd_review
 
 
 def initialize_state() -> None:
@@ -50,7 +55,21 @@ def main() -> None:
         st.caption(f"Session ID: {session.session_id}")
         st.write(f"Status: {session.status.value}")
 
-    st.info("Job description input will be added in Milestone 2.")
+    if session.requirements is None:
+        render_jd_input()
+        render_jd_review(session)
+    else:
+        st.success("Job requirements confirmed.")
+        st.json(session.requirements.model_dump(mode="json"))
 
-    if st.button("Check rerun"):
-        st.success("The script reran. Your session ID should stay the same.")
+        if st.button("Edit requirements"):
+            st.session_state["pending_jd_result"] = JDParseResult(
+                status="valid",
+                requirements=session.requirements.model_copy(deep=True),
+                message="Review your changes and confirm the requirements again.",
+            )
+            st.caption("Requirements confirmed. Question planning is the next step.")
+            st.session_state["jd_review_id"] = uuid4().hex
+
+            session.requirements = None
+            st.rerun()
