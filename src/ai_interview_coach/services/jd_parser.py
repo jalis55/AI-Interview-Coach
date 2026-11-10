@@ -13,7 +13,9 @@ from langchain_core.runnables import Runnable
 from pydantic import ValidationError
 
 from ai_interview_coach.models.jd_parse import JDParseResult
+from ai_interview_coach.utils.activity import emit
 from ai_interview_coach.utils.reliability import run_bounded_attempts
+from ai_interview_coach.utils.usage import model_config
 
 RETRYABLE_ERRORS = (
     APIConnectionError,
@@ -43,6 +45,7 @@ class JDParsingService:
         *,
         primary_max_attempts: int = 3,
         fallback_max_attempts: int = 2,
+        session=None,
     ) -> None:
         if not 1 <= primary_max_attempts <= 3:
             raise ValueError("Primary attempts must be between 1 and 3.")
@@ -50,20 +53,34 @@ class JDParsingService:
         if not 1 <= fallback_max_attempts <= 2:
             raise ValueError("Fallback attempts must be between 1 and 2.")
 
+        self.session = session
+        self._phase = "primary"
+        self._phase_attempt = 0
         self._primary = primary
         self._fallback = fallback
         self._primary_max_attempts = primary_max_attempts
         self._fallback_max_attempts = fallback_max_attempts
 
-    @staticmethod
-    def _invoke(chain: Runnable, jd_text: str) -> JDParseResult:
-        output = chain.invoke({"jd_text": jd_text})
+    def _invoke(self, chain: Runnable, jd_text: str) -> JDParseResult:
+        self._phase_attempt += 1
+        if self.session is not None:
+            emit(
+                self.session,
+                f"{self._phase}_attempt",
+                stage="jd_parser",
+                attempt=self._phase_attempt,
+            )
+            if self._phase_attempt > 1:
+                emit(self.session, "retry", stage="jd_parser", attempt=self._phase_attempt)
+        output = chain.invoke({"jd_text": jd_text}, config=model_config(self.session, "jd_parser"))
         return JDParseResult.model_validate(output)
 
     def parse(self, jd_text: str) -> JDParsingOutcome:
         if not isinstance(jd_text, str):
             raise ValueError("Job description must be text.")
 
+        self._phase = "primary"
+        self._phase_attempt = 0
         cleaned = jd_text.strip()
 
         if not cleaned or len(cleaned) > 30_000:
@@ -92,12 +109,23 @@ class JDParsingService:
                     fallback_attempts=0,
                 )
 
+            self._phase = "fallback"
+            self._phase_attempt = 0
+            if self.session is not None:
+                emit(self.session, "fallback_started", stage="jd_parser")
             fallback = run_bounded_attempts(
                 lambda: self._invoke(self._fallback, cleaned),
                 max_attempts=self._fallback_max_attempts,
                 retry_on=RETRYABLE_ERRORS,
             )
 
+            if self.session is not None:
+                emit(
+                    self.session,
+                    "fallback_finished",
+                    stage="jd_parser",
+                    status="ok" if fallback.succeeded else "error",
+                )
             if fallback.succeeded:
                 assert fallback.value is not None
                 return JDParsingOutcome(
@@ -106,11 +134,13 @@ class JDParsingService:
                     fallback_attempts=fallback.attempts,
                 )
 
-        except RateLimitError:
+        except RateLimitError as error:
+            self._log_provider_failure(error)
             raise JDParsingError(
                 "The model provider is rate-limited. Please try again later."
             ) from None
-        except APIStatusError:
+        except APIStatusError as error:
+            self._log_provider_failure(error)
             raise JDParsingError(
                 "The model provider rejected the request. "
                 "Check your credentials, model access, and request configuration."
@@ -129,3 +159,16 @@ class JDParsingService:
             fallback_attempts=fallback.attempts,
             exhausted=True,
         )
+
+    def _log_provider_failure(self, error):
+        if self.session is not None:
+            emit(
+                self.session,
+                "provider_unavailable",
+                stage="jd_parser",
+                status="error",
+                provider="groq",
+                http_status=error.status_code,
+            )
+            if self._phase == "fallback":
+                emit(self.session, "fallback_finished", stage="jd_parser", status="error")

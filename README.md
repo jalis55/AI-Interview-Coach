@@ -1,109 +1,155 @@
 # AI Interview Coach
 
-A JD-focused preparation coach built incrementally with LangChain LCEL, Groq,
-Tavily, Pydantic v2, and Streamlit. Milestones 1-4 implement requirements review,
-coverage planning, and question preparation. The interview loop comes next.
+A job-description-focused preparation coach built with LangChain LCEL, Groq, Tavily,
+Pydantic v2, Streamlit, and uv. The ten implementation milestones now cover JD review,
+coverage planning, controlled research, interviewing, scoring, adaptive practice,
+evidence reports, fresh retries, and usage accounting.
 
-## Setup
+## Run locally
 
-Install uv, then run from the project root:
+Install uv and run from the project root:
 
 ```bash
 uv sync --locked
 cp .env.example .env
+# Fill GROQ_API_KEY, TAVILY_API_KEY, and GROQ_MODEL locally.
 uv run streamlit run app.py
 ```
 
-Use Python 3.12. Add `GROQ_API_KEY`, `TAVILY_API_KEY`, and a supported
-`GROQ_MODEL` to `.env`. Never commit real credentials. Restart Streamlit after
-changing settings or model classes because settings and session objects are cached.
+Python 3.12 is required. Select a Groq model supporting tool calling and structured
+output; `openai/gpt-oss-120b` was used for the live evaluation smoke check. Never
+commit real credentials. Restart Streamlit after changing configuration or model
+classes. Sessions are ephemeral and disappear on server/browser-session loss.
 
-## Current workflow
+## Offline demo
 
-1. Paste a JD and analyze it with Groq.
-2. Review and edit the extraction, then confirm it. Missing seniority defaults to
-   mid for preparation; the review message discloses that assumption.
-3. Create a coverage plan. Question count is `min(10, max(3, core_skill_count + 1))`.
-   Exactly one slot is behavioral. A validated plan changes status to `ready`.
-4. Click **Prepare questions**. The application validates model tool requests,
-   researches selected technical skills, and builds a source-aware candidate pool.
-5. Inspect coverage counts and research activity. Status remains `preparing` after
-   the pool is ready; Milestone 5 will display the first question and transition
-   to `awaiting_answer`.
+No provider account is needed for the reproducible demo:
 
-Analyzing, planning, and preparing make provider calls. Editing and confirmation do
-not. Prepared results survive widget reruns without automatic repeated paid calls.
+```bash
+uv run streamlit run demo.py
+```
 
-## Research guarantees and limits
+It loads a synthetic Python/SQL role and uses no provider calls. Demo feedback is
+explicitly simulated, recorded as neutral/defaulted 5, and never claims readiness.
+See [demo walkthrough](docs/demo.md).
 
-- At most one Tavily invocation per normalized skill per session, including failures.
-  The budget is reserved before invocation. Empty and error outcomes are cached.
-- Queries contain only authorized skill and seniority. Original JDs and answers are
-  not sent to Tavily. Groq receives JD context for extraction/generation.
-- Tavily uses advanced depth, at most eight results, configurable domain filters,
-  explicit timeouts, no redirects, and no automatic HTTP retries.
-- Extraction retries use bounded cached snippets, never a second search.
-- Structured-output chains have bounded attempts (up to three primary and two JSON
-  fallback attempts). Terminal behavior generates clearly labeled generic practice
-  questions or returns a recoverable error if novelty cannot be maintained.
-- Web labels require a returned source URL and question wording present in the
-  bounded evidence snippet. Newly generated questions use `llm_fallback`.
-- Relevance filtering is conservative and partly lexical; question quality and
-  paraphrase detection are best-effort. Sources are not verified employer questions.
-- Research runs sequentially. The in-memory budget is not a multi-worker lock.
-- Editing requirements clears JD-sensitive candidates and the plan but retains
-  research budgets and cache within the same session. A seniority change does not
-  grant another search allowance for an already researched skill.
+## User journey
 
-Optional `.env` configuration uses JSON for lists:
+1. Paste a JD and analyze it. Review/edit the extracted role, level, and core skills.
+   Missing seniority defaults to mid for preparation and is disclosed during review.
+2. Confirm requirements and create a coverage plan. Initial question count is
+   `min(10, max(3, core_skill_count + 1))`, including exactly one behavioral slot.
+   One skill gets two technical slots; more than nine skills explicitly omits some.
+3. Prepare questions. Each selected technical skill has at most one Tavily invocation
+   per session, including failures. Empty/error results are cached too.
+4. Start the interview, answer one question at a time, and receive score/feedback.
+   Stable turn IDs and an application ledger prevent double scoring on reruns.
+5. Read the report with observed difficulty, reliable evidence, insufficiently assessed
+   skills, target-level gaps, omitted skills, and defaulted-score caveats.
+6. Choose 3, 5, or 10 additional questions on suggested gaps. Practice retains the fixed
+   JD target, research cache, search allowance, evidence, and asked-question exclusions.
+7. Start a fresh interview on the same JD for new scores/history/search budget, while
+   retaining prior displayed-question exclusions. A new JD starts an unrelated lineage.
+
+Analyzing, planning, research, scoring, and report summaries can make Groq calls.
+Only research invokes Tavily. Editing, confirming, display reruns, and cached reports
+make no automatic repeated provider calls. Just-in-time replacement generation and
+focused practice never expand the existing search budget.
+
+## Reliability and honest assessment
+
+- Structured outputs are validated with Pydantic. Model chains use bounded primary
+  attempts and fallback policies; evaluation allows up to three primary and two JSON
+  fallback attempts. Groq SDK retries are disabled.
+- Valid scores below 4 lower only that skill's practice difficulty; above 8 raise it.
+  Scores 4-8 keep it unchanged. Levels clamp to easy/medium/hard; JD targets stay fixed.
+- Failed evaluation records a neutral 5 with an apology and `defaulted` status. It
+  never adapts difficulty or supports ability claims. All-default reports show
+  readiness unavailable.
+- The recorded average includes every stored score, including fallback 5 values.
+  Reliable per-skill averages exclude defaults. Scores across difficulties are not
+  calibrated hiring predictions, and one question cannot establish mastery.
+- Report branches run with `RunnableParallel`; branch failure preserves deterministic
+  arithmetic and evidence-based fallback text. Later practice reports are cumulative.
+- Search uses advanced depth, max eight results, explicit timeouts, configured domains,
+  no redirects, and no automatic HTTP retries. Extraction retries only cached snippets.
+- Web provenance requires a returned URL and question wording supported by its snippet.
+  Generated/rewritten questions use `llm_fallback`. Generic last-resort prompts are
+  clearly disclosed. No source is represented as a verified employer question.
+- Relevance and paraphrase exclusion remain best-effort. If no unused question can
+  be prepared, progress is preserved and a recoverable error appears instead of repeats.
+
+## Usage and privacy
+
+The sidebar shows stage activity, attempted/failed LLM calls, reported input/output
+tokens, retries, fallback paths, safe defaults, and consumed search allowances.
+Unreported tokens and dollar cost are not guessed. Check current provider billing
+before quoting an interview price.
+
+Groq receives JD/answer context for coaching. Tavily receives only authorized skill
+and seniority, not the full JD or candidate answers. Answers are intentionally held
+in isolated in-memory records/history for the report; routine activity events exclude
+raw prompts, JD text, answers, keys, and provider error payloads. Downloaded reports
+are user-controlled exports. Production persistence and authentication are not included.
+
+## Verification
+
+```bash
+uv lock --check
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest -q
+uv build
+```
+
+The automated suite uses fake provider boundaries and requires no real API keys.
+It includes complete Streamlit, failure-path, concurrency, practice, and retry tests.
+GitHub Actions repeats locked installation, lint, format, and tests without API secrets.
+See [validation results](docs/validation.md) for tested versions and live-check limits.
+
+## Configuration
+
+Defaults are in `config.py`. Optional `.env` entries include:
 
 ```dotenv
 SEARCH_DOMAINS=["geeksforgeeks.org","interviewbit.com","stackoverflow.com"]
 CANDIDATES_PER_SKILL=6
 CANDIDATE_POOL_LIMIT=90
 TOOL_LOOP_MAX_ITERATIONS=3
+REQUEST_TIMEOUT_SECONDS=30
+PRIMARY_MAX_ATTEMPTS=3
+FALLBACK_MAX_ATTEMPTS=2
+HISTORY_MAX_MESSAGES=18
+HISTORY_MAX_CHARACTERS=24000
+MAX_ANSWER_CHARACTERS=12000
+MAX_OUTPUT_TOKENS=4096
 ```
 
-## Development
-
-```bash
-uv run ruff check .
-uv run ruff format --check .
-uv run pytest -q
-```
-
-The tests mock paid providers, including real langchain-tavily transport boundaries,
-so the suite needs no real API keys. Commit `uv.lock` for reproducible installs.
-After intentionally changing dependencies, run `uv lock` and `uv sync --locked`.
-See [research design](docs/research.md) for the module map and a manual integration check.
-
-## Structure
+## Structure and learning notes
 
 ```text
-app.py                         Streamlit entry point
+app.py / demo.py               Live and offline Streamlit entry points
 src/ai_interview_coach/
-    config.py                  Validated environment settings
-    models/                    Data contracts and lifecycle enums
+    models/                    Contracts, progress ledger, reports, usage
     prompts/                   Instructions separate from orchestration
-    chains/                    LCEL parsing, planning, extraction and generation
-    providers/                 Groq factory and bounded Tavily adapter
-    planning/                  Deterministic allocation and validation
-    services/                  Application workflow and controlled tool execution
-    tools/                     Research authorization, budgets and question filtering
-    stores/                    Separate session and conversation-history stores
-    ui/                        Streamlit rendering and explicit actions
-    utils/                     Bounded attempts and safe activity events
-tests/unit/                   Contract, failure-path and mocked UI tests
-docs/                         Architecture and research notes
+    chains/                    LCEL pipelines, history adapter, difficulty branch
+    providers/                 Groq factory and bounded Tavily transport
+    planning/                  Deterministic allocation and plan validation
+    services/                  Workflow, evaluation, reporting, research, retry
+    stores/                    Separate session, message-history, and lineage stores
+    tools/                     Authorization, budgets, provenance and novelty checks
+    ui/                        Rendering and explicit user actions
+    utils/                     Bounded attempts, activity events, usage callbacks
+tests/unit/                    Contracts and isolated failure behavior
+tests/integration/             Full lifecycle, concurrency, offline and UI checks
+docs/                          Architecture, research, interview and release notes
 ```
 
-## Limitations
+Read [architecture](docs/architecture.md), [research](docs/research.md),
+[interview services](docs/interview.md), and [milestone/concept coverage](docs/concept_coverage.md).
 
-State is in memory per Streamlit browser session and is lost on server restart or
-browser-session loss. Authentication, persistent accounts, scoring, reporting,
-retry lineage, and usage accounting are future work. No interview price is quoted:
-LLM/search costs must be measured against current provider billing.
-`langchain-core` is constrained to `>=1.4,<1.6.4` to preserve the blueprint history
-API before its deprecation; the lockfile records compatible dependencies.
-Application code uses no RAG, LangGraph, or vector store. LangGraph is a transitive
-package dependency, not the application's orchestration mechanism.
+The application uses no RAG, vector store, legacy Chain subclass, or LangGraph
+orchestration. LangGraph exists only as a transitive integration dependency. The
+locked LCEL history API has a narrowly documented compatibility warning adapter;
+see architecture notes before upgrading dependencies. In-memory single-process
+locking is not distributed persistence or production access control.

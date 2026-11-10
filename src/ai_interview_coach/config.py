@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     candidates_per_skill: int = Field(default=6, ge=3, le=9)
     candidate_pool_limit: int = Field(default=90, ge=30, le=120)
     tool_loop_max_iterations: int = Field(default=3, ge=1, le=3)
+    history_max_messages: int = Field(default=18, ge=4, le=60)
+    max_answer_characters: int = Field(default=12000, ge=100, le=12000)
+    demo_mode: bool = False
+    history_max_characters: int = Field(default=24000, ge=1000, le=60000)
+    max_output_tokens: int = Field(default=4096, ge=256, le=8192)
 
     @field_validator("groq_api_key", "tavily_api_key")
     @classmethod

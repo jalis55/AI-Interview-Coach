@@ -24,11 +24,13 @@ from ai_interview_coach.models.session import InterviewSession, InterviewStatus
 from ai_interview_coach.planning.validation import validate_plan_for_requirements
 from ai_interview_coach.prompts.research import TOOL_SYSTEM
 from ai_interview_coach.providers.tavily import TavilyQuestionSearch, build_search_query
+from ai_interview_coach.tools.generic_questions import generic_question_texts
 from ai_interview_coach.tools.question_filter import filter_questions, is_duplicate
 from ai_interview_coach.tools.research_policy import authorize_research_request
 from ai_interview_coach.tools.research_search import search_once
 from ai_interview_coach.utils.activity import emit
 from ai_interview_coach.utils.reliability import run_bounded_attempts
+from ai_interview_coach.utils.usage import model_config
 
 RECOVERABLE = (APIConnectionError, InternalServerError, OutputParserException, ValueError)
 
@@ -80,7 +82,9 @@ class ResearchService:
                 emit(session, f"{phase}_attempt", skill=skill, attempt=attempt, source=source)
                 if attempt > 1:
                     emit(session, "retry", skill=skill, attempt=attempt, source=source)
-                return QuestionBatch.model_validate(chain.invoke(values))
+                return QuestionBatch.model_validate(
+                    chain.invoke(values, config=model_config(session, source))
+                )
 
             if phase == "fallback":
                 emit(session, "fallback_started", skill=skill, source=source)
@@ -95,6 +99,8 @@ class ResearchService:
                     status="error",
                     **groq_diagnostics(error),
                 )
+                if phase == "primary" and error.status_code == 400:
+                    continue
                 if phase == "fallback":
                     emit(session, "fallback_finished", skill=skill, source=source, status="error")
                 return QuestionBatch(questions=[])
@@ -111,19 +117,7 @@ class ResearchService:
         return QuestionBatch(questions=[])
 
     def _generic_questions(self, session, skill, difficulty, needed, exclusions):
-        if skill == "behavioral":
-            texts = [
-                "Describe a project where you resolved a team conflict. What did you do?",
-                "Describe a situation where feedback changed your decision. What happened?",
-                "Describe a project balancing quality and delivery time. What was the outcome?",
-            ]
-        else:
-            texts = [
-                f"Explain a core concept in {skill} with a small practical example.",
-                f"How would you apply {skill} to a backend or product task, and verify the result?",
-                f"Describe how you would diagnose a failure involving {skill} and compare fixes.",
-                f"What trade-offs would you consider when maintaining a system that uses {skill}?",
-            ]
+        texts = generic_question_texts(skill)
         accepted = []
         for text in texts:
             if is_duplicate(text, exclusions + [q.question for q in accepted], skill=skill):
@@ -240,6 +234,45 @@ class ResearchService:
             emit(session, "candidates_ready", skill=skill, source=source, count=count)
         return QuestionBatch(questions=questions)
 
+    def generate_for_turn(self, session, skill, difficulty):
+        if session.requirements is None or skill not in {
+            *session.requirements.core_skills,
+            "behavioral",
+        }:
+            raise ResearchPreparationError("Question skill is outside confirmed requirements.")
+        exclusions = session.asked_questions + [q.question for q in session.candidate_pool]
+        research = session.search_cache.get(
+            (skill, session.requirements.seniority), SearchOutcome(status="empty")
+        )
+        values = {
+            "limit": self.settings.candidates_per_skill,
+            "requirements": session.requirements.model_dump_json(),
+            "jd_context": session.jd_context[:30_000],
+            "skill": skill,
+            "difficulty": difficulty.value,
+            "snippets": research.model_dump_json(),
+            "exclusions": json.dumps(exclusions[-100:]),
+        }
+        if session.is_demo:
+            questions = []
+        else:
+            batch = self._batch(session, skill, values, extract=False)
+            questions = [
+                q
+                for q in filter_questions(
+                    batch,
+                    skill=skill,
+                    research=research,
+                    exclusions=exclusions,
+                    web=False,
+                    limit=self.settings.candidates_per_skill,
+                )
+                if q.difficulty == difficulty
+            ]
+        if not questions:
+            questions = self._generic_questions(session, skill, difficulty, 1, exclusions)
+        return questions
+
     def _request_message(self, session, messages):
         attempt = 0
 
@@ -249,7 +282,9 @@ class ResearchService:
             emit(session, "primary_attempt", source="tool_planner", attempt=attempt)
             if attempt > 1:
                 emit(session, "retry", source="tool_planner", attempt=attempt)
-            reply = self.tool_planner.invoke(messages)
+            reply = self.tool_planner.invoke(
+                messages, config=model_config(session, "research_tool_planner")
+            )
             if not isinstance(reply, AIMessage) or reply.invalid_tool_calls:
                 raise ValueError("Invalid tool planner response.")
             if len(reply.tool_calls) > len(session.plan.prioritized_skills):

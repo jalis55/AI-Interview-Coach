@@ -61,7 +61,7 @@ reach the adapter instead of becoming plain text. No query-refinement retry exis
 Successful skills commit candidates independently. A failed later skill does not
 erase earlier progress. Retry preparation uses retained caches and allowances.
 Research completeness is separate from lifecycle status: pool readiness stays in
-`preparing` until Milestone 5 displays the current question. Unexpected programming
+`preparing` until the interview service displays the current question. Unexpected programming
 exceptions propagate; expected provider failures take safe paths. An inability to
 produce unused generic questions produces `recoverable_error` rather than repeats.
 
@@ -84,7 +84,7 @@ A live smoke check is deliberately manual and costs provider usage:
 2. Analyze a synthetic JD requiring only Python, confirm, and create a plan.
 3. Click Prepare questions. Inspect the activity sidebar for one Python search.
 4. Confirm Python and behavioral candidate counts, honest fallback labels, and
-   no extra search after a rerun. Questions are selected and shown in Milestone 5.
+   no extra search after a rerun. Click Start interview to select and display the first question.
 5. If the provider is unavailable, inspect the cached error and generic-practice
    disclosure. Do not rerun Tavily to repair extraction.
 

@@ -27,6 +27,9 @@ See research.md for the version-sensitive Tavily transport boundary and failure 
 ## Current scope
 
 This is a single-process local application with isolated in-memory state, JD review,
-validated coverage planning, and question preparation. The interview loop and scoring
-are subsequent milestones; production persistence and authentication remain outside
-the current project scope.
+validated coverage planning, controlled question research, an idempotent interview
+loop, scoring, adaptive practice, evidence reporting, retry lineage, and usage callbacks.
+Production persistence and authentication remain outside the current project scope.
+
+See interview.md for turn staging/commit boundaries, the scoped legacy LCEL history
+compatibility notice, report arithmetic, and fresh-retry versus practice semantics.

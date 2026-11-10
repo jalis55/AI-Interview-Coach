@@ -37,6 +37,12 @@ def render_research(session: InterviewSession) -> None:
         return
 
     st.success("Question preparation complete.")
+    if any(outcome.http_status == 401 for outcome in session.search_cache.values()):
+        st.warning(
+            "Tavily rejected the configured credentials (HTTP 401). Check TAVILY_API_KEY "
+            "and restart the app before starting a fresh interview. "
+            "This interview can continue with generated practice questions."
+        )
     rows = []
     for skill in [*session.plan.prioritized_skills, "behavioral"]:
         counts = Counter(q.source.value for q in session.candidate_pool if q.skill == skill)
@@ -54,15 +60,18 @@ def render_research(session: InterviewSession) -> None:
         "Source labels describe where questions came from, not their quality. "
         "Web results are not verified questions from the target employer."
     )
-    st.caption("The one-question-at-a-time interview is the next milestone.")
+    st.caption("Start the interview below when you are ready.")
 
 
 def render_research_activity(session: InterviewSession) -> None:
-    with st.sidebar.expander("Research activity", expanded=False):
+    with st.sidebar.expander("Session activity", expanded=False):
         if not session.activity_log:
-            st.caption("No research activity yet.")
+            st.caption("No activity yet.")
         for event in session.activity_log[-30:]:
             metadata = " | ".join(f"{key}: {value}" for key, value in event.metadata.items())
-            st.text(f"{event.timestamp:%H:%M:%S} UTC | {event.event_type} | {event.status}")
+            st.text(
+                f"{event.timestamp:%H:%M:%S} UTC | {event.stage} | "
+                f"{event.event_type} | {event.status}"
+            )
             if metadata:
                 st.caption(metadata)

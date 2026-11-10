@@ -12,7 +12,9 @@ from ai_interview_coach.planning.allocation import build_deterministic_plan
 from ai_interview_coach.planning.validation import (
     validate_plan_for_requirements,
 )
+from ai_interview_coach.utils.activity import emit
 from ai_interview_coach.utils.reliability import run_bounded_attempts
+from ai_interview_coach.utils.usage import model_config
 
 
 @dataclass(frozen=True)
@@ -27,6 +29,7 @@ def create_coverage_plan(
     planner: Runnable,
     *,
     max_attempts: int = 3,
+    session=None,
 ) -> PlanningOutcome:
     if not 1 <= max_attempts <= 3:
         raise ValueError("Planner attempts must be between 1 and 3.")
@@ -37,8 +40,12 @@ def create_coverage_plan(
     def attempt_plan() -> QuestionPlan:
         nonlocal attempt_count
         attempt_count += 1
+        if session is not None:
+            emit(session, "primary_attempt", stage="planning", attempt=attempt_count)
+            if attempt_count > 1:
+                emit(session, "retry", stage="planning", attempt=attempt_count)
 
-        output = planner.invoke({})
+        output = planner.invoke({}, config=model_config(session, "planning"))
         proposed = QuestionPlan.model_validate(output)
 
         return validate_plan_for_requirements(proposed, confirmed)
@@ -54,7 +61,16 @@ def create_coverage_plan(
                 ValueError,
             ),
         )
-    except APIStatusError:
+    except APIStatusError as error:
+        if session is not None:
+            emit(
+                session,
+                "provider_unavailable",
+                stage="planning",
+                status="error",
+                provider="groq",
+                http_status=error.status_code,
+            )
         # Rejected requests, including rate limits, skip further paid calls.
         pass
     else:
@@ -66,9 +82,13 @@ def create_coverage_plan(
                 used_fallback=False,
             )
 
+    if session is not None:
+        emit(session, "fallback_started", stage="planning", source="deterministic")
     fallback = build_deterministic_plan(confirmed)
     validated = validate_plan_for_requirements(fallback, confirmed)
 
+    if session is not None:
+        emit(session, "fallback_finished", stage="planning", source="deterministic")
     return PlanningOutcome(
         plan=validated,
         primary_attempts=attempt_count,

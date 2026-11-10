@@ -274,10 +274,9 @@ def test_asked_questions_are_excluded_and_source_queries_do_not_receive_jd():
 def test_novelty_failure_preserves_search_budget_for_recovery():
     service = make_service()
     session = make_session()
-    defaults = service._generic_questions(
-        session, "python", session.plan.slots[0].target_difficulty, 4, []
-    )
-    session.asked_questions = [q.question for q in defaults]
+    from ai_interview_coach.tools.generic_questions import generic_question_texts
+
+    session.asked_questions = generic_question_texts("python")
     with pytest.raises(ResearchPreparationError, match="unused questions"):
         service.prepare(session)
     assert session.status is InterviewStatus.RECOVERABLE_ERROR
@@ -333,3 +332,19 @@ def test_provider_activity_contains_safe_status_and_allowlisted_code_only(code):
     else:
         assert "error_code" not in event.metadata
     assert "DO_NOT_LOG_SECRET" not in event.model_dump_json()
+
+
+def test_just_in_time_generation_never_searches_and_preserves_target():
+    from ai_interview_coach.models.plan import Difficulty
+
+    def forbidden(*args):
+        pytest.fail("Adaptive selection must not invoke search")
+
+    service = make_service(search=forbidden)
+    session = make_session()
+    session.search_calls_by_skill = {"python": 1}
+    question = service.generate_for_turn(session, "python", Difficulty.EASY)[0]
+    assert question.difficulty is Difficulty.EASY
+    assert question.source == "llm_fallback"
+    assert session.plan.slots[0].target_difficulty is Difficulty.MEDIUM
+    assert session.search_calls_by_skill == {"python": 1}

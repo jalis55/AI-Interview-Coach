@@ -23,6 +23,7 @@ def render_planning(session: InterviewSession) -> None:
                     session.requirements,
                     planner,
                     max_attempts=get_settings().primary_max_attempts,
+                    session=session,
                 )
 
             session.plan = outcome.plan
@@ -61,4 +62,4 @@ def render_planning(session: InterviewSession) -> None:
         "Difficulty adaptation becomes visible when a skill appears again, including "
         "during focused practice."
     )
-    st.caption("Prepare questions below. The interview begins in a later milestone.")
+    st.caption("Prepare questions below, then start the interview when you are ready.")

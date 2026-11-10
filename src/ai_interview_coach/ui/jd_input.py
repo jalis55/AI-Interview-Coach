@@ -42,6 +42,7 @@ def render_jd_input(session: InterviewSession) -> None:
         fallback=build_jd_fallback_parser(),
         primary_max_attempts=settings.primary_max_attempts,
         fallback_max_attempts=settings.fallback_max_attempts,
+        session=session,
     )
 
     try:
